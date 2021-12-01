@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.automotivelinux.AppLaunch
+Exec=@bindir@/applaunchd

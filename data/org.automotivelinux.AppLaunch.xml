@@ -1,0 +1,74 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+
+<!--
+ AppLaunch Interface Specification
+
+   Copyright (C) 2021 Collabora Ltd
+-->
+<node name="/org/automotivelinux/AppLaunch" xmlns:doc="http://www.freedesktop.org/dbus/1.0/doc.dtd">
+
+  <!--
+      org.automotivelinux.AppLaunch:
+      @short_description: The AppLaunch interface.
+
+      The AppLaunch interface allows requesting application startup and
+      being notified of application startup and termination events.
+  -->
+  <interface name="org.automotivelinux.AppLaunch">
+
+    <!--
+        start:
+        @appid: Application ID, should match:
+                - the xdg-shell app-id for graphical applications started
+                  through a command line
+                - the D-Bus name owned by the application for D-Bus activated
+                  apps
+
+        Start the application with the corresponding application ID.
+    -->
+    <method name="start">
+      <arg name="appid" type="s" direction="in"/>
+    </method>
+
+    <!--
+        listApplications:
+        @graphical: Whether the should should be limited to graphical
+                    applications.
+        @applist: The application list as an array of variants. Each array item
+                  is an application entry, represented as a structure of 3 strings:
+                  - application ID
+                  - application name
+                  - absolute icon path
+
+        Retrieve the list of applications which can be started using this interface.
+    -->
+    <method name="listApplications">
+      <arg name="graphical" type="b" direction="in"/>
+      <arg name="applist" type="av" direction="out"/>
+    </method>
+
+    <!--
+        started:
+        @appid: Application ID
+
+        Emitted when an application started successfully, which happens when:
+        - the D-Bus name has been taken for D-Bus activated applications
+        - the process was created for other applications
+    -->
+    <signal name="started">
+      <arg name="appid" type="s"/>
+    </signal>
+
+    <!--
+        terminated:
+        @appid: Application ID
+
+        Emitted when an application terminated, which happens when:
+        - the D-Bus name has been released for D-Bus activated applications
+        - the process exited for other applications
+    -->
+    <signal name="terminated">
+      <arg name="appid" type="s"/>
+    </signal>
+  </interface>
+</node>
