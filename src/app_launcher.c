@@ -51,8 +51,12 @@ G_DEFINE_TYPE_WITH_CODE(AppLauncher, app_launcher,
 static void app_launcher_update_applications_list(AppLauncher *self)
 {
     g_autoptr(GList) app_list = g_app_info_get_all();
-    g_auto(GStrv) dirlist = g_strsplit(getenv("XDG_DATA_DIRS"), ":", -1);
+    g_auto(GStrv) dirlist = NULL;
     guint len = g_list_length(app_list);
+
+    char *xdg_data_dirs = getenv("XDG_DATA_DIRS");
+    if (xdg_data_dirs)
+        dirlist = g_strsplit(getenv("XDG_DATA_DIRS"), ":", -1);
 
     for (guint i = 0; i < len; i++) {
         GAppInfo *appinfo = g_list_nth_data(app_list, i);
@@ -102,15 +106,15 @@ static void app_launcher_update_applications_list(AppLauncher *self)
          *   - its .desktop file contains a "DBusActivatable=true" line
          *   - it provides a corresponding D-Bus service file
          */
+
+        /* Default to non-DBus-activatable */
+        dbus_activated = FALSE;
         if (g_desktop_app_info_get_boolean(desktop_info,
                                            G_KEY_FILE_DESKTOP_KEY_DBUS_ACTIVATABLE)) {
             dbus_activated = TRUE;
-        } else {
+        } else if (dirlist) {
             const gchar *desktop_filename = g_desktop_app_info_get_filename(desktop_info);
             g_autofree gchar *service_file = g_strconcat(app_id, ".service", NULL);
-
-            /* Default to non-DBus-activatable */
-            dbus_activated = FALSE;
 
             for (GStrv xdg_data_dir = dirlist; *xdg_data_dir != NULL ; xdg_data_dir++) {
                 g_autofree gchar *service_path = NULL;
@@ -136,7 +140,7 @@ static void app_launcher_update_applications_list(AppLauncher *self)
          * GAppInfo retrieves the icon data but doesn't provide a way to retrieve
          * the corresponding file name, so we have to look it up by ourselves.
          */
-        if (icon)
+        if (icon && dirlist)
             icon_path = applaunchd_utils_get_icon(dirlist, g_icon_to_string(icon));
 
         app_info = app_info_new(app_id, g_app_info_get_name(appinfo),
