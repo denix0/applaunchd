@@ -212,6 +212,7 @@ gboolean process_manager_start_app(ProcessManager *self,
                                               self);
     self->process_data = g_list_append(self->process_data, runtime_data);
     app_info_set_runtime_data(app_info, runtime_data);
+    app_info_set_status(app_info, APP_STATUS_RUNNING);
 
     g_signal_emit(self, signals[STARTED], 0, app_id);
 
