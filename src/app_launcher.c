@@ -38,6 +38,10 @@ G_DEFINE_TYPE_WITH_CODE(AppLauncher, app_launcher,
                         G_IMPLEMENT_INTERFACE(APPLAUNCHD_TYPE_APP_LAUNCH,
                                               app_launcher_iface_init));
 
+static void app_launcher_started_cb(AppLauncher *self,
+                                    const gchar *app_id,
+                                    gpointer caller);
+
 /*
  * Internal functions
  */
@@ -215,6 +219,7 @@ static gboolean app_launcher_start_app(AppLauncher *self, AppInfo *app_info)
         */
         if (app_info_get_dbus_activated(app_info))
             dbus_activation_manager_activate_app(self->dbus_manager, app_info);
+        app_launcher_started_cb(self, app_id, NULL);
         return TRUE;
     case APP_STATUS_INACTIVE:
         if (app_info_get_dbus_activated(app_info))

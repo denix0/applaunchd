@@ -139,6 +139,7 @@ static void dbus_activation_manager_app_started_cb(GDBusConnection *connection,
     g_debug("Application '%s' appeared on D-Bus", name);
     app_info_set_status(app_info, APP_STATUS_RUNNING);
     dbus_activation_manager_activate_app(self, app_info);
+    g_signal_emit(self, signals[STARTED], 0, app_info_get_app_id(app_info));
 }
 
 /*
@@ -239,8 +240,6 @@ gboolean dbus_activation_manager_activate_app(DBusActivationManager *self,
         g_warning("Error creating D-Bus proxy for %s: %s", app_id,
                     error->message);
     }
-
-    g_signal_emit(self, signals[STARTED], 0, app_id);
 
     return TRUE;
 }
