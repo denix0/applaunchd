@@ -20,6 +20,7 @@
 #include "app_launcher.h"
 #include "dbus_activation_manager.h"
 #include "process_manager.h"
+#include "systemd_manager.h"
 #include "utils.h"
 
 typedef struct _AppLauncher {
@@ -27,6 +28,7 @@ typedef struct _AppLauncher {
 
     DBusActivationManager *dbus_manager;
     ProcessManager *process_manager;
+    SystemdManager *systemd_manager;
 
     GList *apps_list;
 } AppLauncher;
@@ -338,6 +340,7 @@ static void app_launcher_dispose(GObject *object)
 
     g_clear_object(&self->dbus_manager);
     g_clear_object(&self->process_manager);
+    g_clear_object(&self->systemd_manager);
 
     G_OBJECT_CLASS(app_launcher_parent_class)->dispose(object);
 }
@@ -371,6 +374,17 @@ static void app_launcher_init (AppLauncher *self)
     g_signal_connect_swapped(self->process_manager, "started",
                              G_CALLBACK(app_launcher_started_cb), self);
     g_signal_connect_swapped(self->process_manager, "terminated",
+                             G_CALLBACK(app_launcher_terminated_cb), self);
+
+    /*
+     * Create the systemd manager and connect to its signals
+     * so we get notified on app startup/termination
+     */
+    self->systemd_manager = g_object_new(APPLAUNCHD_TYPE_SYSTEMD_MANAGER,
+                                         NULL);
+    g_signal_connect_swapped(self->systemd_manager, "started",
+                             G_CALLBACK(app_launcher_started_cb), self);
+    g_signal_connect_swapped(self->systemd_manager, "terminated",
                              G_CALLBACK(app_launcher_terminated_cb), self);
 
     /*
