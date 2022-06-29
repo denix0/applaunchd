@@ -34,7 +34,7 @@ G_DECLARE_FINAL_TYPE(AppInfo, app_info, APPLAUNCHD,
 
 AppInfo *app_info_new(const gchar *app_id, const gchar *name,
                       const gchar *icon_path, const gchar *command,
-                      gboolean dbus_activated, gboolean graphical);
+                      gboolean dbus_activated, gboolean systemd_activated, gboolean graphical);
 
 /* Accessors for read-only members */
 const gchar *app_info_get_app_id(AppInfo *self);
@@ -42,6 +42,7 @@ const gchar *app_info_get_name(AppInfo *self);
 const gchar *app_info_get_icon_path(AppInfo *self);
 const gchar *app_info_get_command(AppInfo *self);
 gboolean app_info_get_dbus_activated(AppInfo *self);
+gboolean app_info_get_systemd_activated(AppInfo *self);
 gboolean app_info_get_graphical(AppInfo *self);
 
 /* Accessors for read-write members */

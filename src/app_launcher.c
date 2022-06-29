@@ -72,7 +72,7 @@ static void app_launcher_update_applications_list(AppLauncher *self)
         g_autofree const gchar *app_id = NULL;
         g_autofree const gchar *icon_path = NULL;
         AppInfo *app_info = NULL;
-        gboolean dbus_activated, graphical;
+        gboolean dbus_activated, systemd_activated, graphical;
 
         if (!desktop_info) {
             g_warning("Unable to find .desktop file for application '%s'", desktop_id);
@@ -115,9 +115,10 @@ static void app_launcher_update_applications_list(AppLauncher *self)
 
         /* Default to non-DBus-activatable */
         dbus_activated = FALSE;
+        systemd_activated = FALSE;
         if (g_desktop_app_info_get_boolean(desktop_info,
                                            G_KEY_FILE_DESKTOP_KEY_DBUS_ACTIVATABLE)) {
-            dbus_activated = TRUE;
+            systemd_activated = TRUE;
         } else if (dirlist) {
             const gchar *desktop_filename = g_desktop_app_info_get_filename(desktop_info);
             g_autofree gchar *service_file = g_strconcat(app_id, ".service", NULL);
@@ -152,7 +153,7 @@ static void app_launcher_update_applications_list(AppLauncher *self)
         app_info = app_info_new(app_id, g_app_info_get_name(appinfo),
                                 icon_path ? icon_path : "",
                                 dbus_activated ? "" : g_app_info_get_commandline(appinfo),
-                                dbus_activated, graphical);
+                                dbus_activated, systemd_activated, graphical);
 
         g_debug("Adding application '%s'", app_id);
 
@@ -221,11 +222,15 @@ static gboolean app_launcher_start_app(AppLauncher *self, AppInfo *app_info)
         */
         if (app_info_get_dbus_activated(app_info))
             dbus_activation_manager_activate_app(self->dbus_manager, app_info);
+/*        if (app_info_get_systemd_activated(app_info))
+            systemd_manager_activate_app(self->systemd_manager, app_info); */
         app_launcher_started_cb(self, app_id, NULL);
         return TRUE;
     case APP_STATUS_INACTIVE:
         if (app_info_get_dbus_activated(app_info))
             dbus_activation_manager_start_app(self->dbus_manager, app_info);
+        else if (app_info_get_systemd_activated(app_info))
+            systemd_manager_start_app(self->systemd_manager, app_info);
         else
             process_manager_start_app(self->process_manager, app_info);
         return TRUE;

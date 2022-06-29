@@ -17,6 +17,7 @@
 applaunchd_deps = [
     dependency('gobject-2.0'),
     dependency('gio-unix-2.0'),
+    dependency('libsystemd'),
 ]
 
 executable (

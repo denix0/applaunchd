@@ -27,6 +27,7 @@ struct _AppInfo {
     gchar *icon_path;
     gchar *command;
     gboolean dbus_activated;
+    gboolean systemd_activated;
     gboolean graphical;
 
     AppStatus status;
@@ -56,7 +57,11 @@ static void app_info_dispose(GObject *object)
     if (self->dbus_activated) {
         g_clear_pointer(&self->runtime_data,
                         dbus_activation_manager_free_runtime_data);
-    } else {
+    }
+/* else if (self->systemd_activated) {
+        g_clear_pointer(&self->runtime_data,
+                        systemd_manager_free_runtime_data); */
+    else {
         g_clear_pointer(&self->runtime_data, g_free);
     }
 
@@ -86,7 +91,8 @@ static void app_info_init(AppInfo *self)
 
 AppInfo *app_info_new(const gchar *app_id, const gchar *name,
                       const gchar *icon_path, const gchar *command,
-                      gboolean dbus_activated, gboolean graphical)
+                      gboolean dbus_activated, gboolean systemd_activated,
+                      gboolean graphical)
 {
     AppInfo *self = g_object_new(APPLAUNCHD_TYPE_APP_INFO, NULL);
 
@@ -95,6 +101,7 @@ AppInfo *app_info_new(const gchar *app_id, const gchar *name,
     self->icon_path = g_strdup(icon_path);
     self->command = g_strdup(command);
     self->dbus_activated = dbus_activated;
+    self->systemd_activated = systemd_activated;
     self->graphical = graphical;
 
     return self;
@@ -133,6 +140,13 @@ gboolean app_info_get_dbus_activated(AppInfo *self)
     g_return_val_if_fail(APPLAUNCHD_IS_APP_INFO(self), FALSE);
 
     return self->dbus_activated;
+}
+
+gboolean app_info_get_systemd_activated(AppInfo *self)
+{
+    g_return_val_if_fail(APPLAUNCHD_IS_APP_INFO(self), FALSE);
+
+    return self->systemd_activated;
 }
 
 gboolean app_info_get_graphical(AppInfo *self)

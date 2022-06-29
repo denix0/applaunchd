@@ -182,10 +182,16 @@ gboolean systemd_manager_start_app(SystemdManager *self,
     g_return_val_if_fail(APPLAUNCHD_IS_APP_INFO(app_info), FALSE);
 
     gboolean success;
-    g_autofree GStrv args = NULL;
+    g_autofree gchar *service = NULL;
     const gchar *app_id = app_info_get_app_id(app_info);
     const gchar *command = app_info_get_command(app_info);
     struct process_runtime_data *runtime_data;
+
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_message *m = NULL;
+    sd_bus *bus = NULL;
+    const char *path;
+    int r;
 
     runtime_data = g_new0(struct process_runtime_data, 1);
     if (!runtime_data) {
@@ -196,14 +202,43 @@ gboolean systemd_manager_start_app(SystemdManager *self,
 
     runtime_data->app_id = app_id;
 
-    args = g_strsplit(command, " ", -1);
-    success = g_spawn_async(NULL, args, NULL,
-                            G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH,
-                            NULL, NULL, &runtime_data->pid, NULL);
+    /* Compose the corresponding service name */
+    service = g_strdup_printf("agl-app@%s.service", command);
+
+    /* Connect to the system bus */
+    r = sd_bus_open_system(&bus);
+    if (r < 0) {
+        g_critical("Failed to connect to system bus: %s", strerror(-r));
+        goto finish;
+    }
+
+    /* Issue the method call and store the response message in m */
+    r = sd_bus_call_method(bus,
+                           "org.freedesktop.systemd1",           /* service to contact */
+                           "/org/freedesktop/systemd1",          /* object path */
+                           "org.freedesktop.systemd1.Manager",   /* interface name */
+                           "StartUnit",                          /* method name */
+                           &error,                               /* object to return error in */
+                           &m,                                   /* return message on success */
+                           "ss",                                 /* input signature */
+                           service,                              /* first argument */
+                           "replace");                           /* second argument */
+    if (r < 0) {
+        g_critical("Failed to issue method call: %s", error.message);
+        goto finish;
+    }
+
+    /* Parse the response message */
+    r = sd_bus_message_read(m, "o", &path);
+    if (r < 0) {
+        g_critical("Failed to parse response message: %s", strerror(-r));
+        goto finish;
+    }
+
     if (!success) {
         g_critical("Unable to start application '%s'", app_id);
         g_free(runtime_data);
-        return FALSE;
+        goto finish;
     }
 
     /*
@@ -219,4 +254,10 @@ gboolean systemd_manager_start_app(SystemdManager *self,
     g_signal_emit(self, signals[STARTED], 0, app_id);
 
     return TRUE;
+
+finish:
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(m);
+    sd_bus_unref(bus);
+    return FALSE;
 }
