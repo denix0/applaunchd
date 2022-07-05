@@ -28,7 +28,6 @@ executable (
         'main.c',
         'app_info.c', 'app_info.h',
         'app_launcher.c', 'app_launcher.h',
-        'dbus_activation_manager.c', 'dbus_activation_manager.h',
         'process_manager.c', 'process_manager.h',
         'systemd_manager.c', 'systemd_manager.h',
         'utils.c', 'utils.h',
