@@ -235,6 +235,8 @@ gboolean systemd_manager_start_app(SystemdManager *self,
         goto finish;
     }
 
+    g_critical("Queued service job as %s.", path);
+
     /*
      * Add a watcher for the child PID in order to get notified when it dies
      */
