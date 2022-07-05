@@ -235,12 +235,6 @@ gboolean systemd_manager_start_app(SystemdManager *self,
         goto finish;
     }
 
-    if (!success) {
-        g_critical("Unable to start application '%s'", app_id);
-        g_free(runtime_data);
-        goto finish;
-    }
-
     /*
      * Add a watcher for the child PID in order to get notified when it dies
      */
@@ -256,6 +250,7 @@ gboolean systemd_manager_start_app(SystemdManager *self,
     return TRUE;
 
 finish:
+    g_free(runtime_data);
     sd_bus_error_free(&error);
     sd_bus_message_unref(m);
     sd_bus_unref(bus);
