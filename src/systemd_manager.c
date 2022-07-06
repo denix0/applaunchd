@@ -39,9 +39,8 @@ static guint signals[N_SIGNALS];
  * in the `running_apps` list
  */
 struct process_runtime_data {
-    guint watcher;
-    GPid pid;
     const gchar *app_id;
+    const gchar *esc_service;
 };
 
 /*
@@ -91,7 +90,7 @@ static void systemd_manager_init(SystemdManager *self)
  * Internal functions
  */
 
-static const gchar *get_app_id_for_pid(SystemdManager *self, GPid pid)
+/* static const gchar *get_app_id_for_pid(SystemdManager *self, GPid pid)
 {
     g_return_val_if_fail(APPLAUNCHD_IS_SYSTEMD_MANAGER(self), NULL);
 
@@ -107,19 +106,42 @@ static const gchar *get_app_id_for_pid(SystemdManager *self, GPid pid)
     }
 
     return NULL;
-}
+} */
 
 /*
  * Internal callbacks
  */
 
 /*
- * This function is called when a watched process terminated, so we can:
- *   - cleanup this application's data (and reap the process so it
- *     doesn't become a zombie)
- *   - notify listeners that the process terminated
+ * This function is called when "PropertiesChanged" signal happens
  */
-static void systemd_manager_app_terminated_cb(GPid pid,
+int systemd_manager_cb(sd_bus_message *m, void *userdata, sd_bus_error *ret_error)
+{
+    sd_bus *bus = NULL;
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    char* msg = NULL;
+    struct process_runtime_data *runtime_data = userdata;
+    int r;
+
+    r = sd_bus_open_system(&bus);
+    if (r < 0) {
+        g_critical("Failed to connect to system bus: %s", strerror(-r));
+        return -1;
+    }
+
+    g_critical("Callback for: %s : %s", runtime_data->app_id, runtime_data->esc_service);
+
+    sd_bus_get_property_string(
+                        bus,                                             /* bus */
+                        "org.freedesktop.systemd1",                      /* destination */
+                        "/org/freedesktop/systemd1/unit/foo_2eservice", /* path */
+                        "org.freedesktop.systemd1.Unit",                 /* interface */
+                        "ActiveState",                                   /* member */
+                        &err, 
+                        &msg);
+}
+
+/* static void systemd_manager_app_terminated_cb(GPid pid,
                                               gint wait_status,
                                               gpointer data)
 {
@@ -161,7 +183,7 @@ static void systemd_manager_app_terminated_cb(GPid pid,
     g_free(runtime_data);
 
     g_signal_emit(self, signals[TERMINATED], 0, app_id);
-}
+} */
 
 /*
  * Public functions
@@ -183,6 +205,7 @@ gboolean systemd_manager_start_app(SystemdManager *self,
 
     gboolean success;
     g_autofree gchar *service = NULL;
+    gchar *esc_service = NULL;
     const gchar *app_id = app_info_get_app_id(app_info);
     const gchar *command = app_info_get_command(app_info);
     struct process_runtime_data *runtime_data;
@@ -235,19 +258,38 @@ gboolean systemd_manager_start_app(SystemdManager *self,
         goto finish;
     }
 
-    g_critical("Queued service job as %s.", path);
+    sd_bus_path_encode("/org/freedesktop/systemd1/unit", service, &esc_service);
+
+    g_critical("Escaped service name: %s.", esc_service);
+
+    runtime_data->esc_service = esc_service;
+
+    sd_bus_match_signal(
+                bus,                               /* bus */
+                NULL,                              /* slot */
+                NULL,                              /* sender */
+                esc_service,                       /* path */
+                "org.freedesktop.DBus.Properties", /* interface */
+                "PropertiesChanged",               /* member */
+                systemd_manager_cb,                /* callback */
+                runtime_data                       /* userdata */
+    );
 
     /*
      * Add a watcher for the child PID in order to get notified when it dies
      */
-    runtime_data->watcher = g_child_watch_add(runtime_data->pid,
+/*    runtime_data->watcher = g_child_watch_add(runtime_data->pid,
                                               systemd_manager_app_terminated_cb,
-                                              self);
+                                              self); */
     self->process_data = g_list_append(self->process_data, runtime_data);
     app_info_set_runtime_data(app_info, runtime_data);
-    app_info_set_status(app_info, APP_STATUS_RUNNING);
+/*    app_info_set_status(app_info, APP_STATUS_RUNNING);
 
-    g_signal_emit(self, signals[STARTED], 0, app_id);
+    g_signal_emit(self, signals[STARTED], 0, app_id); */
+
+    /* Update application status */
+    app_info_set_status(app_info, APP_STATUS_STARTING);
+    app_info_set_runtime_data(app_info, runtime_data);
 
     return TRUE;
 
