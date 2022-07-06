@@ -22,7 +22,7 @@
 struct _SystemdManager {
     GObject parent_instance;
 
-    GList *process_data;
+/* we don't need the list here    GList *process_data; */
 };
 
 G_DEFINE_TYPE(SystemdManager, systemd_manager, G_TYPE_OBJECT);
@@ -38,8 +38,7 @@ static guint signals[N_SIGNALS];
  * Application info structure, used for storing relevant data
  * in the `running_apps` list
  */
-struct process_runtime_data {
-    const gchar *app_id;
+struct systemd_runtime_data {
     const gchar *esc_service;
     SystemdManager *mgr;
     sd_bus_slot *slot;
@@ -55,8 +54,8 @@ static void systemd_manager_dispose(GObject *object)
 
     g_return_if_fail(APPLAUNCHD_IS_SYSTEMD_MANAGER(self));
 
-    if (self->process_data)
-        g_list_free_full(g_steal_pointer(&self->process_data), g_free);
+/*    if (self->process_data)
+        g_list_free_full(g_steal_pointer(&self->process_data), g_free);*/
 
     G_OBJECT_CLASS(systemd_manager_parent_class)->dispose(object);
 }
@@ -89,28 +88,6 @@ static void systemd_manager_init(SystemdManager *self)
 }
 
 /*
- * Internal functions
- */
-
-/* static const gchar *get_app_id_for_pid(SystemdManager *self, GPid pid)
-{
-    g_return_val_if_fail(APPLAUNCHD_IS_SYSTEMD_MANAGER(self), NULL);
-
-    AppLauncher *app_launcher = app_launcher_get_default();
-    guint len = g_list_length(self->process_data);
-
-    for (guint i = 0; i < len; i++) {
-        struct process_runtime_data *runtime_data =
-                                g_list_nth_data(self->process_data, i);
-
-        if (runtime_data->pid == pid)
-            return runtime_data->app_id;
-    }
-
-    return NULL;
-} */
-
-/*
  * Internal callbacks
  */
 
@@ -122,15 +99,13 @@ int systemd_manager_cb(sd_bus_message *m, void *userdata, sd_bus_error *ret_erro
     AppLauncher *launcher = app_launcher_get_default();
     sd_bus_error err = SD_BUS_ERROR_NULL;
     char* msg = NULL;
-/*    struct process_runtime_data *runtime_data = userdata;*/
     AppInfo *app_info = userdata;
-    struct process_runtime_data *data;
+    struct systemd_runtime_data *data;
 
     data = app_info_get_runtime_data(app_info);
     if(!data)
     {
-        g_critical("data is NULL");
-        g_critical("-- for %s!", app_info_get_app_id(app_info));
+        g_critical("Couldn't find runtime data for %s!", app_info_get_app_id(app_info));
         return 0;
     }
 
@@ -143,67 +118,24 @@ int systemd_manager_cb(sd_bus_message *m, void *userdata, sd_bus_error *ret_erro
                         &err, 
                         &msg);
 
-    g_critical("Callback '%s' for: %s : %s", msg, data->app_id, data->esc_service);
+    g_critical("Callback '%s' for: %s : %s", msg, app_info_get_app_id(app_info), data->esc_service);
 
     if(!g_strcmp0(msg, "inactive"))
     {
         app_info_set_status(app_info, APP_STATUS_INACTIVE);
         app_info_set_runtime_data(app_info, NULL);
 
-        data->mgr->process_data = g_list_remove(data->mgr->process_data, data);
-        g_signal_emit(data->mgr, signals[TERMINATED], 0, data->app_id);
-        sd_bus_slot_unref(data->slot);
-        g_free(data);
+        g_signal_emit(data->mgr, signals[TERMINATED], 0, app_info_get_app_id(app_info));
+        systemd_manager_free_runtime_data(data);
     }
     else if(!g_strcmp0(msg, "active"))
     {
+        app_info_set_status(app_info, APP_STATUS_RUNNING);
+/*        dbus_activation_manager_activate_app(self, app_info); */
+        g_signal_emit(data->mgr, signals[STARTED], 0, app_info_get_app_id(app_info));
     }
     return 0;
 }
-
-/* static void systemd_manager_app_terminated_cb(GPid pid,
-                                              gint wait_status,
-                                              gpointer data)
-{
-    SystemdManager *self = data;
-    AppLauncher *app_launcher = app_launcher_get_default();
-    struct process_runtime_data *runtime_data;
-    const gchar *app_id;
-    AppInfo *app_info;
-
-    g_return_if_fail(APPLAUNCHD_IS_SYSTEMD_MANAGER(self));
-
-    app_id = get_app_id_for_pid(self, pid);
-    if (!app_id) {
-        g_warning("Unable to retrieve app id for pid %d", pid);
-        return;
-    }
-
-    app_info = app_launcher_get_app_info(app_launcher, app_id);
-    if (!app_info) {
-        g_warning("Unable to find running app with pid %d", pid);
-        return;
-    }
-
-    if (g_spawn_check_exit_status(wait_status, NULL))
-        g_debug("Application '%s' terminated with exit code %i",
-                app_id, WEXITSTATUS(wait_status));
-    else
-        g_warning("Application '%s' crashed", app_id);
-
-    g_spawn_close_pid(pid);
-
-    runtime_data = app_info_get_runtime_data(app_info);
-    g_source_remove(runtime_data->watcher);
-
-    app_info_set_status(app_info, APP_STATUS_INACTIVE);
-    app_info_set_runtime_data(app_info, NULL);
-
-    self->process_data = g_list_remove(self->process_data, runtime_data);
-    g_free(runtime_data);
-
-    g_signal_emit(self, signals[TERMINATED], 0, app_id);
-} */
 
 /*
  * Public functions
@@ -229,7 +161,7 @@ gboolean systemd_manager_start_app(SystemdManager *self,
     gchar *esc_service = NULL;
     const gchar *app_id = app_info_get_app_id(app_info);
     const gchar *command = app_info_get_command(app_info);
-    struct process_runtime_data *runtime_data;
+    struct systemd_runtime_data *runtime_data;
 
     sd_bus_error error = SD_BUS_ERROR_NULL;
     sd_bus_message *m = NULL;
@@ -237,14 +169,14 @@ gboolean systemd_manager_start_app(SystemdManager *self,
     const char *path;
     int r;
 
-    runtime_data = g_new0(struct process_runtime_data, 1);
+    runtime_data = g_new0(struct systemd_runtime_data, 1);
     if (!runtime_data) {
         g_critical("Unable to allocate runtime data structure for '%s'",
                    app_id);
         return FALSE;
     }
 
-    runtime_data->app_id = app_id;
+/*    runtime_data->app_id = app_id;*/
     runtime_data->mgr = self;
 
     /* Compose the corresponding service name */
@@ -307,7 +239,7 @@ gboolean systemd_manager_start_app(SystemdManager *self,
 /*    runtime_data->watcher = g_child_watch_add(runtime_data->pid,
                                               systemd_manager_app_terminated_cb,
                                               self); */
-    self->process_data = g_list_append(self->process_data, runtime_data);
+/*    self->process_data = g_list_append(self->process_data, runtime_data);*/
     app_info_set_runtime_data(app_info, runtime_data);
 /*    app_info_set_status(app_info, APP_STATUS_RUNNING);
 
@@ -324,4 +256,15 @@ finish:
     sd_bus_message_unref(m);
 /*    sd_bus_unref(bus);*/
     return FALSE;
+}
+
+void systemd_manager_free_runtime_data(gpointer data)
+{
+    struct systemd_runtime_data *runtime_data = data;
+
+    g_return_if_fail(runtime_data != NULL);
+
+    sd_bus_slot_unref(runtime_data->slot);
+    g_free(runtime_data->esc_service);
+    g_free(runtime_data);
 }
