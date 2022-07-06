@@ -41,6 +41,8 @@ static guint signals[N_SIGNALS];
 struct process_runtime_data {
     const gchar *app_id;
     const gchar *esc_service;
+    SystemdManager *mgr;
+    sd_bus_slot *slot;
 };
 
 /*
@@ -117,28 +119,46 @@ static void systemd_manager_init(SystemdManager *self)
  */
 int systemd_manager_cb(sd_bus_message *m, void *userdata, sd_bus_error *ret_error)
 {
-    sd_bus *bus = NULL;
+    AppLauncher *launcher = app_launcher_get_default();
     sd_bus_error err = SD_BUS_ERROR_NULL;
     char* msg = NULL;
-    struct process_runtime_data *runtime_data = userdata;
-    int r;
+/*    struct process_runtime_data *runtime_data = userdata;*/
+    AppInfo *app_info = userdata;
+    struct process_runtime_data *data;
 
-    r = sd_bus_open_system(&bus);
-    if (r < 0) {
-        g_critical("Failed to connect to system bus: %s", strerror(-r));
-        return -1;
+    data = app_info_get_runtime_data(app_info);
+    if(!data)
+    {
+        g_critical("data is NULL");
+        g_critical("-- for %s!", app_info_get_app_id(app_info));
+        return 0;
     }
 
-    g_critical("Callback for: %s : %s", runtime_data->app_id, runtime_data->esc_service);
-
     sd_bus_get_property_string(
-                        bus,                                             /* bus */
-                        "org.freedesktop.systemd1",                      /* destination */
-                        "/org/freedesktop/systemd1/unit/foo_2eservice", /* path */
-                        "org.freedesktop.systemd1.Unit",                 /* interface */
-                        "ActiveState",                                   /* member */
+                        app_launcher_get_bus(launcher),   /* bus */
+                        "org.freedesktop.systemd1",       /* destination */
+                        data->esc_service,                /* path */
+                        "org.freedesktop.systemd1.Unit",  /* interface */
+                        "ActiveState",                    /* member */
                         &err, 
                         &msg);
+
+    g_critical("Callback '%s' for: %s : %s", msg, data->app_id, data->esc_service);
+
+    if(!g_strcmp0(msg, "inactive"))
+    {
+        app_info_set_status(app_info, APP_STATUS_INACTIVE);
+        app_info_set_runtime_data(app_info, NULL);
+
+        data->mgr->process_data = g_list_remove(data->mgr->process_data, data);
+        g_signal_emit(data->mgr, signals[TERMINATED], 0, data->app_id);
+        sd_bus_slot_unref(data->slot);
+        g_free(data);
+    }
+    else if(!g_strcmp0(msg, "active"))
+    {
+    }
+    return 0;
 }
 
 /* static void systemd_manager_app_terminated_cb(GPid pid,
@@ -203,6 +223,7 @@ gboolean systemd_manager_start_app(SystemdManager *self,
     g_return_val_if_fail(APPLAUNCHD_IS_SYSTEMD_MANAGER(self), FALSE);
     g_return_val_if_fail(APPLAUNCHD_IS_APP_INFO(app_info), FALSE);
 
+    AppLauncher *launcher = app_launcher_get_default();
     gboolean success;
     g_autofree gchar *service = NULL;
     gchar *esc_service = NULL;
@@ -212,7 +233,7 @@ gboolean systemd_manager_start_app(SystemdManager *self,
 
     sd_bus_error error = SD_BUS_ERROR_NULL;
     sd_bus_message *m = NULL;
-    sd_bus *bus = NULL;
+/*    sd_bus *bus = NULL; */
     const char *path;
     int r;
 
@@ -224,19 +245,20 @@ gboolean systemd_manager_start_app(SystemdManager *self,
     }
 
     runtime_data->app_id = app_id;
+    runtime_data->mgr = self;
 
     /* Compose the corresponding service name */
     service = g_strdup_printf("agl-app@%s.service", command);
 
     /* Connect to the system bus */
-    r = sd_bus_open_system(&bus);
+/*    r = sd_bus_open_system(&bus);
     if (r < 0) {
         g_critical("Failed to connect to system bus: %s", strerror(-r));
         goto finish;
-    }
+    }*/
 
     /* Issue the method call and store the response message in m */
-    r = sd_bus_call_method(bus,
+    r = sd_bus_call_method(app_launcher_get_bus(launcher),       /* bus */
                            "org.freedesktop.systemd1",           /* service to contact */
                            "/org/freedesktop/systemd1",          /* object path */
                            "org.freedesktop.systemd1.Manager",   /* interface name */
@@ -264,16 +286,20 @@ gboolean systemd_manager_start_app(SystemdManager *self,
 
     runtime_data->esc_service = esc_service;
 
-    sd_bus_match_signal(
-                bus,                               /* bus */
-                NULL,                              /* slot */
+    r = sd_bus_match_signal(
+                app_launcher_get_bus(launcher),    /* bus */
+                &runtime_data->slot,               /* slot */
                 NULL,                              /* sender */
                 esc_service,                       /* path */
                 "org.freedesktop.DBus.Properties", /* interface */
                 "PropertiesChanged",               /* member */
                 systemd_manager_cb,                /* callback */
-                runtime_data                       /* userdata */
+                app_info                           /* userdata */
     );
+    if (r < 0) {
+        g_critical("Failed to set match signal: %s", strerror(-r));
+        goto finish;
+    }
 
     /*
      * Add a watcher for the child PID in order to get notified when it dies
@@ -289,7 +315,6 @@ gboolean systemd_manager_start_app(SystemdManager *self,
 
     /* Update application status */
     app_info_set_status(app_info, APP_STATUS_STARTING);
-    app_info_set_runtime_data(app_info, runtime_data);
 
     return TRUE;
 
@@ -297,6 +322,6 @@ finish:
     g_free(runtime_data);
     sd_bus_error_free(&error);
     sd_bus_message_unref(m);
-    sd_bus_unref(bus);
+/*    sd_bus_unref(bus);*/
     return FALSE;
 }

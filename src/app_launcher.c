@@ -25,11 +25,18 @@
 typedef struct _AppLauncher {
     applaunchdAppLaunchSkeleton parent;
 
+    sd_event *event;
+    sd_bus *bus;
+
     ProcessManager *process_manager;
     SystemdManager *systemd_manager;
 
     GList *apps_list;
 } AppLauncher;
+
+extern GMainLoop *main_loop;
+
+extern GSource *g_sd_event_create_source(sd_event *event, sd_bus *bus);
 
 static void app_launcher_iface_init(applaunchdAppLaunchIface *iface);
 
@@ -366,6 +373,11 @@ static void app_launcher_iface_init(applaunchdAppLaunchIface *iface)
 
 static void app_launcher_init (AppLauncher *self)
 {
+    sd_bus_open_system(&self->bus);
+    sd_event_default(&self->event);
+    sd_bus_attach_event(self->bus, self->event, SD_EVENT_PRIORITY_NORMAL);
+    g_source_attach(g_sd_event_create_source(self->event, self->bus), g_main_loop_get_context(main_loop));
+
     /*
      * Create the process manager and connect to its signals
      * so we get notified on app startup/termination
@@ -444,4 +456,14 @@ AppInfo *app_launcher_get_app_info(AppLauncher *self, const gchar *app_id)
     g_warning("Unable to find application with ID '%s'", app_id);
 
     return NULL;
+}
+
+sd_bus *app_launcher_get_bus(AppLauncher *self)
+{
+    return self->bus;
+}
+
+sd_event *app_launcher_get_event(AppLauncher *self)
+{
+    return self->event;
 }

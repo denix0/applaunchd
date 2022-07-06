@@ -18,6 +18,8 @@
 #define APPLAUNCHER_H
 
 #include <glib-object.h>
+#include <systemd/sd-bus.h>
+#include <systemd/sd-event.h>
 
 #include "applaunch-dbus.h"
 #include "app_info.h"
@@ -32,6 +34,8 @@ G_DECLARE_FINAL_TYPE(AppLauncher, app_launcher, APPLAUNCHD, APP_LAUNCHER,
 AppLauncher *app_launcher_get_default(void);
 
 AppInfo *app_launcher_get_app_info(AppLauncher *self, const gchar *app_id);
+sd_bus *app_launcher_get_bus(AppLauncher *self);
+sd_event *app_launcher_get_event(AppLauncher *self);
 
 G_END_DECLS
 

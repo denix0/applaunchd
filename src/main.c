@@ -16,6 +16,8 @@
 
 #include <glib.h>
 #include <glib-unix.h>
+#include <systemd/sd-bus.h>
+#include <systemd/sd-event.h>
 
 #include "app_launcher.h"
 #include "applaunch-dbus.h"
@@ -23,7 +25,14 @@
 #define APPLAUNCH_DBUS_NAME "org.automotivelinux.AppLaunch"
 #define APPLAUNCH_DBUS_PATH "/org/automotivelinux/AppLaunch"
 
-static GMainLoop *main_loop = NULL;
+typedef struct SDEventSource {
+  GSource source;
+  GPollFD pollfd;
+  sd_event *event;
+  sd_bus *bus;
+} SDEventSource;
+
+GMainLoop *main_loop = NULL;
 
 static gboolean quit_cb(gpointer user_data)
 {
@@ -60,6 +69,45 @@ static void name_lost_cb(GDBusConnection *connection, const gchar *name,
     g_main_loop_quit(main_loop);
 }
 
+static gboolean event_prepare(GSource *source, gint *timeout_) {
+  return sd_event_prepare(((SDEventSource *)source)->event) > 0;
+}
+
+static gboolean event_check(GSource *source) {
+  return sd_event_wait(((SDEventSource *)source)->event, 0) > 0;
+}
+
+static gboolean event_dispatch(GSource *source, GSourceFunc callback, gpointer user_data) {
+  g_critical("sd event dispatch");
+  return sd_event_dispatch(((SDEventSource *)source)->event) > 0;
+}
+
+static void event_finalize(GSource *source) {
+  sd_event_unref(((SDEventSource *)source)->event);
+}
+
+static GSourceFuncs event_funcs = {
+  .prepare = event_prepare,
+  .check = event_check,
+  .dispatch = event_dispatch,
+  .finalize = event_finalize,
+};
+
+GSource *g_sd_event_create_source(sd_event *event, sd_bus *bus) {
+  SDEventSource *source;
+
+  source = (SDEventSource *)g_source_new(&event_funcs, sizeof(SDEventSource));
+
+  source->event = sd_event_ref(event);
+  source->bus = sd_bus_ref(bus);
+  source->pollfd.fd = sd_bus_get_fd(bus);
+  source->pollfd.events = sd_bus_get_events(bus);
+
+  g_source_add_poll((GSource *)source, &source->pollfd);
+
+  return (GSource *)source;
+}
+
 int main(int argc, char *argv[])
 {
     g_unix_signal_add(SIGTERM, quit_cb, NULL);
@@ -68,6 +116,7 @@ int main(int argc, char *argv[])
     main_loop = g_main_loop_new(NULL, FALSE);
 
     AppLauncher *launcher = app_launcher_get_default();
+
     gint owner_id = g_bus_own_name(G_BUS_TYPE_SESSION, APPLAUNCH_DBUS_NAME,
                                    G_BUS_NAME_OWNER_FLAGS_NONE, bus_acquired_cb,
                                    name_acquired_cb, name_lost_cb,
