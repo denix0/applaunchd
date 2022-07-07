@@ -25,6 +25,7 @@
 typedef struct _AppLauncher {
     applaunchdAppLaunchSkeleton parent;
 
+/* TODO: try to move event and bus properties down to systemd_manager */
     sd_event *event;
     sd_bus *bus;
 
@@ -225,14 +226,9 @@ static gboolean app_launcher_start_app(AppLauncher *self, AppInfo *app_info)
         * and notify subscribers it should be activated/brought to the
         * foreground
         */
-/*        if (app_info_get_dbus_activated(app_info))
-            dbus_activation_manager_activate_app(self->dbus_manager, app_info); */
         app_launcher_started_cb(self, app_id, NULL);
         return TRUE;
     case APP_STATUS_INACTIVE:
-/*        if (app_info_get_dbus_activated(app_info))
-            dbus_activation_manager_start_app(self->dbus_manager, app_info);
-        else  */
         if (app_info_get_systemd_activated(app_info))
             systemd_manager_start_app(self->systemd_manager, app_info);
         else
@@ -399,17 +395,6 @@ static void app_launcher_init (AppLauncher *self)
                              G_CALLBACK(app_launcher_started_cb), self);
     g_signal_connect_swapped(self->systemd_manager, "terminated",
                              G_CALLBACK(app_launcher_terminated_cb), self);
-
-    /*
-     * Create the D-Bus activation manager and connect to its signals
-     * so we get notified on app startup/termination
-     */
-/*    self->dbus_manager = g_object_new(APPLAUNCHD_TYPE_DBUS_ACTIVATION_MANAGER,
-                                      NULL);
-    g_signal_connect_swapped(self->dbus_manager, "started",
-                             G_CALLBACK(app_launcher_started_cb), self);
-    g_signal_connect_swapped(self->dbus_manager, "terminated",
-                             G_CALLBACK(app_launcher_terminated_cb), self); */
 
     /* Initialize the applications list */
     app_launcher_update_applications_list(self);
